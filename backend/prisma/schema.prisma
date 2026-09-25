@@ -1,0 +1,469 @@
+// CargoPulse Prisma Database Schema
+// Enterprise Multi-Tier Supply Chain & Logistics Platform
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  WAREHOUSE_MANAGER
+  LOGISTICS_MANAGER
+  SUPPLIER
+  CUSTOMER
+}
+
+enum UserStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  SUSPENDED
+}
+
+enum POStatus {
+  DRAFT
+  PENDING
+  APPROVED
+  CONFIRMED
+  PROCESSING
+  DISPATCHED
+  RECEIVED
+  CANCELLED
+}
+
+enum ShipmentStatus {
+  ORDERED
+  PACKED
+  DISPATCHED
+  IN_TRANSIT
+  ARRIVED
+  OUT_FOR_DELIVERY
+  DELIVERED
+  DELAYED
+  CANCELLED
+}
+
+enum DeliveryStatus {
+  ASSIGNED
+  OUT_FOR_DELIVERY
+  DELIVERED
+  FAILED
+  RESCHEDULED
+}
+
+enum TransactionType {
+  STOCK_IN
+  STOCK_OUT
+  TRANSFER
+  ADJUSTMENT
+  DAMAGED
+  RETURN
+}
+
+enum ReturnStatus {
+  REQUESTED
+  PICKUP_SCHEDULED
+  IN_TRANSIT
+  RECEIVED_FOR_INSPECTION
+  COMPLETED
+  REJECTED
+}
+
+enum InspectionDecision {
+  PENDING
+  RESTOCK
+  REPAIR
+  REPLACE
+  SCRAP
+}
+
+enum NotificationSeverity {
+  INFO
+  WARNING
+  CRITICAL
+  SUCCESS
+}
+
+model Organization {
+  id        String   @id @default(uuid())
+  name      String
+  code      String   @unique
+  address   String?
+  phone     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users      User[]
+  warehouses Warehouse[]
+}
+
+model User {
+  id             String        @id @default(uuid())
+  email          String        @unique
+  passwordHash   String
+  name           String
+  role           Role          @default(WAREHOUSE_MANAGER)
+  status         UserStatus    @default(PENDING)
+  companyName    String?
+  phone          String?
+  approvedById   String?
+  approvedAt     DateTime?
+  rejectedReason String?
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  auditLogs        AuditLog[]
+  createdPOs       PurchaseOrder[]        @relation("POCreator")
+  transactions     InventoryTransaction[]
+  inspectedReturns ReturnRequest[]        @relation("Inspector")
+}
+
+model Category {
+  id          String    @id @default(uuid())
+  name        String    @unique
+  description String?
+  products    Product[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Product {
+  id           String   @id @default(uuid())
+  sku          String   @unique
+  name         String
+  description  String?
+  categoryId   String
+  category     Category @relation(fields: [categoryId], references: [id])
+  unit         String   @default("units")
+  price        Float
+  minStock     Int      @default(10)
+  maxStock     Int      @default(1000)
+  weightKg     Float?
+  dailyDemand  Float    @default(5.0)
+  supplierId   String?
+  supplier     Supplier? @relation(fields: [supplierId], references: [id])
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  inventories       Inventory[]
+  transactions      InventoryTransaction[]
+  poItems           PurchaseOrderItem[]
+  shipmentItems     ShipmentItem[]
+  returnItems       ReturnItem[]
+}
+
+model Warehouse {
+  id             String        @id @default(uuid())
+  code           String        @unique
+  name           String
+  city           String
+  state          String
+  country        String        @default("India")
+  address        String
+  latitude       Float
+  longitude      Float
+  capacitySqFt   Float
+  utilizationPct Float         @default(0.0)
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  zones             WarehouseZone[]
+  inventories       Inventory[]
+  originShipments   Shipment[]      @relation("OriginWarehouse")
+  destShipments     Shipment[]      @relation("DestWarehouse")
+  transactions      InventoryTransaction[]
+  purchaseOrders    PurchaseOrder[]
+  returnRequests    ReturnRequest[]
+}
+
+model WarehouseZone {
+  id          String          @id @default(uuid())
+  code        String
+  name        String
+  warehouseId String
+  warehouse   Warehouse       @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  racks       WarehouseRack[]
+
+  @@unique([warehouseId, code])
+}
+
+model WarehouseRack {
+  id          String         @id @default(uuid())
+  code        String
+  zoneId      String
+  zone        WarehouseZone  @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+  bins        WarehouseBin[]
+
+  @@unique([zoneId, code])
+}
+
+model WarehouseBin {
+  id          String        @id @default(uuid())
+  code        String
+  rackId      String
+  rack        WarehouseRack @relation(fields: [rackId], references: [id], onDelete: Cascade)
+  inventories Inventory[]
+
+  @@unique([rackId, code])
+}
+
+model Inventory {
+  id          String        @id @default(uuid())
+  productId   String
+  product     Product       @relation(fields: [productId], references: [id])
+  warehouseId String
+  warehouse   Warehouse     @relation(fields: [warehouseId], references: [id])
+  binId       String?
+  bin         WarehouseBin? @relation(fields: [binId], references: [id])
+  quantity    Int           @default(0)
+  batchNumber String?
+  expiryDate  DateTime?
+  updatedAt   DateTime      @updatedAt
+
+  @@unique([productId, warehouseId, binId])
+}
+
+model InventoryTransaction {
+  id            String          @id @default(uuid())
+  transactionNo String          @unique
+  productId     String
+  product       Product         @relation(fields: [productId], references: [id])
+  warehouseId   String
+  warehouse     Warehouse       @relation(fields: [warehouseId], references: [id])
+  type          TransactionType
+  quantity      Int
+  previousStock Int
+  newStock      Int
+  reason        String?
+  referenceDoc  String?
+  userId        String?
+  user          User?           @relation(fields: [userId], references: [id])
+  createdAt     DateTime        @default(now())
+}
+
+model Supplier {
+  id                 String          @id @default(uuid())
+  code               String          @unique
+  name               String
+  contactName        String
+  email              String          @unique
+  phone              String
+  address            String
+  city               String
+  country            String          @default("India")
+  rating             Float           @default(4.5)
+  onTimeDeliveryRate Float           @default(95.0)
+  qualityRate        Float           @default(98.0)
+  fulfillmentRate    Float           @default(96.0)
+  overallScore       Float           @default(96.3)
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  products       Product[]
+  purchaseOrders PurchaseOrder[]
+}
+
+model PurchaseOrder {
+  id            String              @id @default(uuid())
+  orderNo       String              @unique
+  supplierId    String
+  supplier      Supplier            @relation(fields: [supplierId], references: [id])
+  warehouseId   String
+  warehouse     Warehouse           @relation(fields: [warehouseId], references: [id])
+  status        POStatus            @default(PENDING)
+  totalAmount   Float
+  currency      String              @default("INR")
+  expectedDate  DateTime?
+  receivedDate  DateTime?
+  createdById   String?
+  createdBy     User?               @relation("POCreator", fields: [createdById], references: [id])
+  items         PurchaseOrderItem[]
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+}
+
+model PurchaseOrderItem {
+  id              String        @id @default(uuid())
+  purchaseOrderId String
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  productId       String
+  product         Product       @relation(fields: [productId], references: [id])
+  quantity        Int
+  unitPrice       Float
+  totalPrice      Float
+  receivedQty     Int           @default(0)
+}
+
+model Carrier {
+  id        String     @id @default(uuid())
+  name      String
+  code      String     @unique
+  contact   String
+  email     String
+  rating    Float      @default(4.5)
+  vehicles  Vehicle[]
+  shipments Shipment[]
+}
+
+model Vehicle {
+  id             String     @id @default(uuid())
+  plateNumber    String     @unique
+  model          String
+  type           String     @default("Truck")
+  capacityTons   Float
+  currentLoadTons Float     @default(0.0)
+  carrierId      String?
+  carrier        Carrier?   @relation(fields: [carrierId], references: [id])
+  driverId       String?
+  driver         Driver?    @relation(fields: [driverId], references: [id])
+  shipments      Shipment[]
+}
+
+model Driver {
+  id          String     @id @default(uuid())
+  name        String
+  phone       String     @unique
+  licenseNo   String     @unique
+  rating      Float      @default(4.8)
+  vehicles    Vehicle[]
+  shipments   Shipment[]
+}
+
+model Shipment {
+  id                 String          @id @default(uuid())
+  trackingNumber     String          @unique
+  originWarehouseId  String
+  originWarehouse    Warehouse       @relation("OriginWarehouse", fields: [originWarehouseId], references: [id])
+  destWarehouseId    String?
+  destWarehouse      Warehouse?      @relation("DestWarehouse", fields: [destWarehouseId], references: [id])
+  destinationAddress String
+  carrierId          String?
+  carrier            Carrier?        @relation(fields: [carrierId], references: [id])
+  vehicleId          String?
+  vehicle            Vehicle?        @relation(fields: [vehicleId], references: [id])
+  driverId           String?
+  driver             Driver?         @relation(fields: [driverId], references: [id])
+  status             ShipmentStatus  @default(ORDERED)
+  estimatedDelivery  DateTime
+  actualDelivery     DateTime?
+  currentLocation    String?
+  currentLat         Float?
+  currentLng         Float?
+  riskScore          Int             @default(15)
+  delayReason        String?
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  items          ShipmentItem[]
+  trackingEvents TrackingEvent[]
+  delivery       Delivery?
+}
+
+model ShipmentItem {
+  id         String   @id @default(uuid())
+  shipmentId String
+  shipment   Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  productId  String
+  product    Product  @relation(fields: [productId], references: [id])
+  quantity   Int
+}
+
+model TrackingEvent {
+  id         String         @id @default(uuid())
+  shipmentId String
+  shipment   Shipment       @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  status     ShipmentStatus
+  location   String
+  latitude   Float?
+  longitude  Float?
+  note       String?
+  timestamp  DateTime       @default(now())
+}
+
+model Delivery {
+  id               String            @id @default(uuid())
+  deliveryNo       String            @unique
+  shipmentId       String            @unique
+  shipment         Shipment          @relation(fields: [shipmentId], references: [id])
+  recipientName    String
+  recipientPhone   String
+  destination      String
+  status           DeliveryStatus    @default(ASSIGNED)
+  scheduledTime    DateTime
+  deliveredTime    DateTime?
+  proofOfDelivery  ProofOfDelivery?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+}
+
+model ProofOfDelivery {
+  id           String    @id @default(uuid())
+  deliveryId   String    @unique
+  delivery     Delivery  @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+  signatureUrl String?
+  photoUrl     String?
+  signedBy     String
+  signedAt     DateTime  @default(now())
+  notes        String?
+}
+
+model ReturnRequest {
+  id              String             @id @default(uuid())
+  returnNo        String             @unique
+  customerName    String
+  customerEmail   String
+  warehouseId     String
+  warehouse       Warehouse          @relation(fields: [warehouseId], references: [id])
+  status          ReturnStatus       @default(REQUESTED)
+  decision        InspectionDecision @default(PENDING)
+  reason          String
+  inspectionNotes String?
+  inspectedById   String?
+  inspectedBy     User?              @relation("Inspector", fields: [inspectedById], references: [id])
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  items ReturnItem[]
+}
+
+model ReturnItem {
+  id              String        @id @default(uuid())
+  returnRequestId String
+  returnRequest   ReturnRequest @relation(fields: [returnRequestId], references: [id], onDelete: Cascade)
+  productId       String
+  product         Product       @relation(fields: [productId], references: [id])
+  quantity        Int
+  condition       String        @default("DAMAGED")
+}
+
+model Notification {
+  id        String               @id @default(uuid())
+  title     String
+  message   String
+  severity  NotificationSeverity @default(INFO)
+  type      String               @default("SYSTEM")
+  isRead    Boolean              @default(false)
+  link      String?
+  createdAt DateTime             @default(now())
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+  action    String
+  entity    String
+  entityId  String?
+  details   String?
+  ipAddress String?
+  createdAt DateTime @default(now())
+}

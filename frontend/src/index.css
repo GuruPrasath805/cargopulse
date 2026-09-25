@@ -1,0 +1,72 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-white text-slate-900 font-sans antialiased;
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  }
+  h1, h2, h3, .font-serif {
+    font-family: 'Fraunces', ui-serif, Georgia, serif;
+  }
+}
+
+/* Sleek custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #F8FAFC;
+}
+::-webkit-scrollbar-thumb {
+  background: #CBD5E1;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #FF6B00;
+}
+
+/* Custom Pulse Animation */
+@keyframes pulse-glow {
+  0%, 100% {
+    box-shadow: 0 0 10px rgba(255, 107, 0, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 25px rgba(255, 107, 0, 0.8);
+  }
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2.5s infinite;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+/* Highway road motion streaks for the realistic background freight truck */
+@keyframes road-streak-flow {
+  0% { transform: translateX(120%) scaleX(0.5); opacity: 0; }
+  25% { opacity: 0.9; }
+  75% { opacity: 0.9; }
+  100% { transform: translateX(-140%) scaleX(1.5); opacity: 0; }
+}
+
+.road-motion-streak {
+  position: absolute;
+  height: 3px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.95), transparent);
+  animation: road-streak-flow 1.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+/* Soft shimmer sweep across the badge pill */
+@keyframes badge-shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(200%); }
+}
+.badge-shimmer {
+  animation: badge-shimmer 2.8s ease-in-out infinite;
+}

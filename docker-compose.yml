@@ -1,0 +1,70 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: cargopulse-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: cargopulse_password
+      POSTGRES_DB: cargopulse_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d cargopulse_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: cargopulse-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  server:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: cargopulse-server
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      PORT: 5000
+      NODE_ENV: production
+      DATABASE_URL: postgresql://postgres:cargopulse_password@postgres:5432/cargopulse_db?schema=public
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: super_secure_cargopulse_jwt_secret_key_2026
+      CLIENT_URL: http://localhost:3000
+    ports:
+      - "5000:5000"
+
+  client:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: cargopulse-client
+    restart: unless-stopped
+    depends_on:
+      - server
+    ports:
+      - "3000:80"
+
+volumes:
+  pgdata:
+  redisdata:
