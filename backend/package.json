@@ -4,7 +4,7 @@
   "description": "CargoPulse Logistics Management Backend API",
   "main": "dist/server.js",
   "engines": {
-    "node": ">=18.0.0"
+    "node": "22.x"
   },
   "scripts": {
     "build": "tsc",
@@ -38,6 +38,6 @@
     "prisma": "^5.18.0",
     "ts-node": "^10.9.2",
     "ts-node-dev": "^2.0.0",
-    "typescript": "^5.5.4"
+    "typescript": "5.9.3"
   }
 }
