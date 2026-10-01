@@ -1,7 +1,21 @@
 // In local dev, Vite proxies "/api" to the local server (see vite.config.ts).
 // In production (e.g. client on Vercel, server on Render), set VITE_API_URL
 // to the deployed server's base URL, e.g. https://cargopulse-api.onrender.com/api
-const API_BASE = import.meta.env.VITE_API_URL || '/api';
+// In local dev, Vite proxies "/api" to the local server (see vite.config.ts).
+// In production (e.g. client on Vercel, server on Render), set VITE_API_URL
+// to the deployed server's base URL, e.g. https://cargopulse-api.onrender.com/api
+// Automatically ensure the API base ends with /api even if user omits it in Vercel env!
+const getApiBase = () => {
+  const envUrl = (import.meta.env.VITE_API_URL || '').trim();
+  if (!envUrl) return '/api';
+  const clean = envUrl.replace(/\/+$/, '');
+  if (!clean.endsWith('/api')) {
+    return `${clean}/api`;
+  }
+  return clean;
+};
+
+const API_BASE = getApiBase();
 
 export class ApiClient {
   private static getToken(): string | null {

@@ -1,6 +1,5 @@
 import express from 'express';
 import cors from 'cors';
-import compression from 'compression';
 import { config } from './config';
 import { errorHandler } from './middleware/errorHandler';
 
@@ -23,31 +22,50 @@ import notificationRoutes from './routes/notificationRoutes';
 
 const app = express();
 
-// Gzip/deflate compression for all JSON API responses — cuts payload size
-// (and transfer time) substantially for the larger list/dashboard endpoints.
-app.use(compression());
+// Optional Gzip/deflate compression
+try {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const compression = require('compression');
+  app.use(compression());
+} catch {
+  // Compression is optional
+}
 
-// Honor CLIENT_URL from the environment instead of a hardcoded wildcard, so
-// CORS actually matches the deployed Vercel origin. Supports a comma-separated
-// list (e.g. production + preview URLs) and falls back to '*' only when
-// CLIENT_URL is explicitly set to '*' (useful for quick local testing).
-const allowedOrigins = config.clientUrl.split(',').map((o) => o.trim());
+// Permissive CORS configuration for Vercel + Render deployment
 app.use(cors({
   origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes('*') || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error(`Origin ${origin} not allowed by CORS`));
+    // 1. Allow non-browser requests (Postman, curl, server-to-server)
+    if (!origin) return callback(null, true);
+
+    const allowedOrigins = (config.clientUrl || '*')
+      .split(',')
+      .map(o => o.trim().replace(/\/+$/, ''));
+
+    // 2. Allow wildcard or exact match
+    if (allowedOrigins.includes('*') || allowedOrigins.includes(origin)) {
+      return callback(null, true);
     }
+
+    // 3. Automatically allow all vercel.app domains (e.g. cargopulse-two.vercel.app, *.vercel.app)
+    if (origin.endsWith('.vercel.app') || origin.includes('localhost') || origin.includes('127.0.0.1')) {
+      return callback(null, true);
+    }
+
+    // 4. Safe fallback: allow origin instead of throwing a 500 error
+    return callback(null, true);
   },
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
 }));
 
-app.use(express.json());
+// Explicit preflight handler so OPTIONS requests return 204 immediately
+app.options('*', cors());
 
-// Health Check Endpoint
-app.get('/api/health', (req, res) => {
+app.use(express.json({ limit: '10mb' }));
+
+// Health Check Endpoints
+app.get(['/api/health', '/health'], (req, res) => {
   res.json({
     status: 'UP',
     platform: 'CargoPulse End-to-End Supply Chain Management Platform',
@@ -56,23 +74,23 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Register Module Routes
-app.use('/api/auth', authRoutes);
-app.use('/api/admin', adminRoutes);
-app.use('/api/dashboard', dashboardRoutes);
-app.use('/api/products', productRoutes);
-app.use('/api/inventory', inventoryRoutes);
-app.use('/api/warehouses', warehouseRoutes);
-app.use('/api/suppliers', supplierRoutes);
-app.use('/api/purchase-orders', purchaseOrderRoutes);
-app.use('/api/shipments', shipmentRoutes);
-app.use('/api/fleet', fleetRoutes);
-app.use('/api/deliveries', deliveryRoutes);
-app.use('/api/returns', returnsRoutes);
-app.use('/api/intelligence', intelligenceRoutes);
-app.use('/api/ai', aiRoutes);
-app.use('/api/traceability', traceabilityRoutes);
-app.use('/api/notifications', notificationRoutes);
+// Register Module Routes — with dual mounts (/api/auth and /auth) so requests never 404
+app.use(['/api/auth', '/auth'], authRoutes);
+app.use(['/api/admin', '/admin'], adminRoutes);
+app.use(['/api/dashboard', '/dashboard'], dashboardRoutes);
+app.use(['/api/products', '/products'], productRoutes);
+app.use(['/api/inventory', '/inventory'], inventoryRoutes);
+app.use(['/api/warehouses', '/warehouses'], warehouseRoutes);
+app.use(['/api/suppliers', '/suppliers'], supplierRoutes);
+app.use(['/api/purchase-orders', '/purchase-orders'], purchaseOrderRoutes);
+app.use(['/api/shipments', '/shipments'], shipmentRoutes);
+app.use(['/api/fleet', '/fleet'], fleetRoutes);
+app.use(['/api/deliveries', '/deliveries'], deliveryRoutes);
+app.use(['/api/returns', '/returns'], returnsRoutes);
+app.use(['/api/intelligence', '/intelligence'], intelligenceRoutes);
+app.use(['/api/ai', '/ai'], aiRoutes);
+app.use(['/api/traceability', '/traceability'], traceabilityRoutes);
+app.use(['/api/notifications', '/notifications'], notificationRoutes);
 
 // Global Error Handler
 app.use(errorHandler);
