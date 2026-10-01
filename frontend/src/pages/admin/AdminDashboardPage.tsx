@@ -6,6 +6,7 @@ import {
   Clock,
   ScrollText,
   Check,
+  CheckCircle2,
   X,
   Ban,
   RotateCcw,
@@ -216,7 +217,10 @@ export const AdminDashboardPage: React.FC = () => {
   const runAction = async (fn: () => Promise<any>) => {
     setActionError(null);
     try {
-      await fn();
+      const res = await fn();
+      if (res && res.message) {
+        setEmailSuccessNotice(res.message);
+      }
       await loadAll();
     } catch (err: any) {
       setActionError(err.message || 'Action failed.');
@@ -283,6 +287,21 @@ export const AdminDashboardPage: React.FC = () => {
             );
           })}
         </div>
+
+        {emailSuccessNotice && (
+          <div className="mb-4 flex items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs text-emerald-800 shadow-xs">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
+              <span>{emailSuccessNotice}</span>
+            </div>
+            <button
+              onClick={() => setEmailSuccessNotice(null)}
+              className="text-emerald-700 hover:text-emerald-950 text-xs font-bold ml-2 cursor-pointer"
+            >
+              ✕
+            </button>
+          </div>
+        )}
 
         {actionError && (
           <div className="mb-4 rounded-xl border border-rose-900/50 bg-rose-950/30 px-4 py-3 text-xs text-rose-300">{actionError}</div>

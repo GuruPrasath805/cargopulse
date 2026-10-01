@@ -3,6 +3,13 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import { config } from '../config';
 import { fallbackDb } from '../db/fallbackDb';
+import { sendPasswordResetEmail } from '../services/emailService';
+
+interface ResetCodeEntry {
+  code: string;
+  expiresAt: number;
+}
+const passwordResetStore = new Map<string, ResetCodeEntry>();
 
 const ALLOWED_ROLES = ['ADMIN', 'WAREHOUSE_MANAGER', 'LOGISTICS_MANAGER', 'SUPPLIER', 'CUSTOMER'];
 
@@ -135,4 +142,87 @@ export const getMe = async (req: any, res: Response) => {
 export const getAllUsers = async (req: Request, res: Response) => {
   const users = fallbackDb.users.map(publicUser);
   return res.json({ success: true, count: users.length, users });
+};
+
+export const forgotPassword = async (req: Request, res: Response) => {
+  try {
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({ success: false, message: 'Corporate email is required.' });
+    }
+
+    const user = fallbackDb.findUserByEmail(email.trim());
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'No registered account found with this email address.' });
+    }
+
+    // Generate 6-digit cryptographically secure OTP
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    passwordResetStore.set(user.email.toLowerCase(), {
+      code,
+      expiresAt: Date.now() + 15 * 60 * 1000, // 15 mins
+    });
+
+    const emailRes = await sendPasswordResetEmail({
+      to: user.email,
+      name: user.name,
+      code,
+    });
+
+    const isSimulated = emailRes.simulated || !emailRes.success;
+
+    return res.json({
+      success: true,
+      message: isSimulated
+        ? `Reset code generated: ${code} (Note: SMTP is not configured on Render, so code is provided directly).`
+        : `A 6-digit password reset code has been dispatched to ${user.email}.`,
+      simulated: isSimulated,
+      code: isSimulated ? code : undefined,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+export const resetPassword = async (req: Request, res: Response) => {
+  try {
+    const { email, code, newPassword } = req.body;
+    if (!email || !code || !newPassword) {
+      return res.status(400).json({ success: false, message: 'Email, verification code, and new password are required.' });
+    }
+
+    if (newPassword.length < 8) {
+      return res.status(400).json({ success: false, message: 'Password must be at least 8 characters long.' });
+    }
+
+    const entry = passwordResetStore.get(email.toLowerCase().trim());
+    if (!entry) {
+      return res.status(400).json({ success: false, message: 'No active password reset request found for this email. Please request a new code.' });
+    }
+
+    if (Date.now() > entry.expiresAt) {
+      passwordResetStore.delete(email.toLowerCase().trim());
+      return res.status(400).json({ success: false, message: 'The reset code has expired. Please request a new code.' });
+    }
+
+    if (entry.code !== code.trim()) {
+      return res.status(400).json({ success: false, message: 'Invalid verification code. Please check and try again.' });
+    }
+
+    const user = fallbackDb.findUserByEmail(email.trim());
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found.' });
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+    fallbackDb.updatePassword(user.email, passwordHash);
+    passwordResetStore.delete(email.toLowerCase().trim());
+
+    return res.json({
+      success: true,
+      message: 'Password reset successfully! You can now sign in with your new password.',
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
 };

@@ -5,18 +5,29 @@ import { fallbackDb } from '../db/fallbackDb';
 import { AuthenticatedRequest } from '../middleware/auth';
 
 
+import { config } from '../config';
+
+const getClientBaseUrl = () => {
+  const raw = config.clientUrl || '';
+  if (!raw || raw === '*' || raw.includes('localhost')) {
+    return 'https://cargopulse-two.vercel.app';
+  }
+  return raw.split(',')[0].trim().replace(/\/+$/, '');
+};
+
 const getPortalMeta = (role: string) => {
+  const base = getClientBaseUrl();
   switch (role) {
     case 'WAREHOUSE_MANAGER':
-      return { title: 'Warehouse Operations Portal', url: 'http://localhost:5173/warehouse/login' };
+      return { title: 'Warehouse Operations Portal', url: `${base}/warehouse/login` };
     case 'LOGISTICS_MANAGER':
-      return { title: 'Logistics & Fleet Portal', url: 'http://localhost:5173/logistics/login' };
+      return { title: 'Logistics & Fleet Portal', url: `${base}/logistics/login` };
     case 'SUPPLIER':
-      return { title: 'Supplier Network Portal', url: 'http://localhost:5173/supplier/login' };
+      return { title: 'Supplier Network Portal', url: `${base}/supplier/login` };
     case 'CUSTOMER':
-      return { title: 'Customer & Consignee Portal', url: 'http://localhost:5173/customer/login' };
+      return { title: 'Customer & Consignee Portal', url: `${base}/customer/login` };
     default:
-      return { title: 'CargoPulse Portal', url: 'http://localhost:5173/warehouse/login' };
+      return { title: 'CargoPulse Portal', url: `${base}/warehouse/login` };
   }
 };
 
@@ -85,20 +96,36 @@ export const approveUser = async (req: AuthenticatedRequest, res: Response) => {
   if (!updated) return res.status(404).json({ success: false, message: 'User not found.' });
 
   // Send email notification to user's registered email
+  let emailStatus = { sent: false, note: '' };
   try {
     const meta = getPortalMeta(updated.role);
-    await sendApprovalEmail({
+    const emailResult = await sendApprovalEmail({
       to: updated.email,
       name: updated.name,
       role: updated.role,
       portalTitle: meta.title,
       loginUrl: meta.url,
     });
-  } catch (err) {
+    if (emailResult.success && !emailResult.simulated) {
+      emailStatus = { sent: true, note: `Confirmation email dispatched to ${updated.email}` };
+    } else {
+      emailStatus = { sent: false, note: emailResult.reason || 'Simulated dispatch (SMTP_USER/SMTP_PASS not set on Render)' };
+    }
+  } catch (err: any) {
     console.error('Failed to trigger approval email:', err);
+    emailStatus = { sent: false, note: err.message };
   }
 
-  return res.json({ success: true, message: `${updated.name} approved and confirmation email dispatched.`, user: publicUser(updated) });
+  const message = emailStatus.sent
+    ? `${updated.name} approved! Confirmation email dispatched to ${updated.email}.`
+    : `${updated.name} approved! (Email status: ${emailStatus.note})`;
+
+  return res.json({
+    success: true,
+    message,
+    user: publicUser(updated),
+    emailStatus,
+  });
 };
 
 export const rejectUser = async (req: AuthenticatedRequest, res: Response) => {

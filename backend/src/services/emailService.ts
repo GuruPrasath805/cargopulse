@@ -446,18 +446,131 @@ ${payload.message}
   `;
 };
 
+// Reusable transporter factory with Gmail service optimization and app password trimming
+const getTransporter = () => {
+  const smtpHost = process.env.SMTP_HOST || 'smtp.gmail.com';
+  const smtpPort = parseInt(process.env.SMTP_PORT || '587', 10);
+  const smtpUser = process.env.SMTP_USER;
+  const smtpPass = (process.env.SMTP_PASS || '').replace(/\s+/g, '');
+
+  if (!smtpUser || !smtpPass) {
+    return null;
+  }
+
+  const isGmail = smtpHost.includes('gmail.com');
+  if (isGmail) {
+    return {
+      transporter: nodemailer.createTransport({
+        service: 'gmail',
+        auth: { user: smtpUser, pass: smtpPass },
+      }),
+      fromEmail: process.env.FROM_EMAIL || smtpUser,
+    };
+  }
+
+  return {
+    transporter: nodemailer.createTransport({
+      host: smtpHost,
+      port: smtpPort,
+      secure: smtpPort === 465,
+      auth: { user: smtpUser, pass: smtpPass },
+      tls: { rejectUnauthorized: false },
+    }),
+    fromEmail: process.env.FROM_EMAIL || smtpUser,
+  };
+};
+
+/**
+ * Builds the enterprise HTML email for password reset requests.
+ */
+const buildPasswordResetEmailHtml = (payload: { name: string; code: string; resetUrl?: string }): string => {
+  const logoBase64 = getLogoBase64();
+  const logoSrc = logoBase64 || 'cid:cargopulselogo';
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reset Your CargoPulse Password</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1e293b; line-height: 1.6;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #f8fafc; padding: 40px 10px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="100%" style="max-width: 600px; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.05); border: 1px solid #e2e8f0;">
+          
+          <!-- Header with Logo -->
+          <tr>
+            <td style="background-color: #0f172a; padding: 32px 40px; text-align: left; border-bottom: 3px solid #ff7a00;">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                <tr>
+                  <td>
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                      <img src="${logoSrc}" alt="CargoPulse" height="34" style="height: 34px; max-height: 34px; width: auto; display: inline-block; vertical-align: middle; border: 0;" />
+                      <span style="display: inline-block; vertical-align: middle; color: #ffffff; font-size: 20px; font-weight: 800; letter-spacing: -0.5px; margin-left: 10px;">CargoPulse</span>
+                    </div>
+                  </td>
+                  <td align="right">
+                    <span style="background-color: rgba(255, 122, 0, 0.15); border: 1px solid rgba(255, 122, 0, 0.4); color: #ff7a00; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; padding: 4px 10px; border-radius: 6px;">
+                      Security Verification
+                    </span>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Main Content -->
+          <tr>
+            <td style="padding: 40px;">
+              <h1 style="color: #0f172a; font-size: 22px; font-weight: 800; margin: 0 0 12px 0;">Password Reset Request</h1>
+              <p style="color: #475569; font-size: 14px; margin: 0 0 24px 0;">
+                Hello <strong>${payload.name}</strong>, we received a request to reset the password for your CargoPulse account. Use the verification code below to complete the reset.
+              </p>
+
+              <!-- OTP Code Display Card -->
+              <div style="background-color: #fff7ed; border: 2px dashed #ff7a00; border-radius: 12px; padding: 24px; text-align: center; margin-bottom: 28px;">
+                <p style="margin: 0 0 8px 0; color: #9a3412; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px;">Your 6-Digit Reset Code</p>
+                <div style="font-family: 'Courier New', Courier, monospace; font-size: 36px; font-weight: 900; letter-spacing: 8px; color: #ea580c;">
+                  ${payload.code}
+                </div>
+                <p style="margin: 12px 0 0 0; color: #9a3412; font-size: 12px;">This code will expire in <strong>15 minutes</strong>.</p>
+              </div>
+
+              <p style="color: #64748b; font-size: 13px; margin: 0 0 24px 0;">
+                Return to the login screen, enter this code, and select a strong new password (minimum 8 characters).
+              </p>
+
+              <!-- Security notice -->
+              <div style="background-color: #f1f5f9; border-left: 4px solid #64748b; padding: 12px 16px; border-radius: 0 8px 8px 0; font-size: 12px; color: #475569;">
+                <strong>Security Notice:</strong> If you did not request a password reset, please ignore this email. Your existing password remains secure.
+              </div>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="background-color: #f8fafc; padding: 24px 40px; border-top: 1px solid #e2e8f0; text-align: center; font-size: 12px; color: #94a3b8;">
+              <p style="margin: 0 0 6px 0;">CargoPulse &bull; Intelligent End-to-End Supply Chain Infrastructure</p>
+              <p style="margin: 0;">This is an automated system notification. For assistance, contact your system administrator.</p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+};
+
 /**
  * Sends the approval email with embedded logo and role-tailored operational content.
  */
 export const sendApprovalEmail = async (
   payload: ApprovalEmailPayload
-): Promise<{ success: boolean; messageId?: string; simulated?: boolean }> => {
-  const smtpHost = process.env.SMTP_HOST;
-  const smtpPort = parseInt(process.env.SMTP_PORT || '587', 10);
-  const smtpUser = process.env.SMTP_USER;
-  const smtpPass = process.env.SMTP_PASS;
-  const fromEmail = process.env.FROM_EMAIL || 'notifications@cargopulse.io';
-
+): Promise<{ success: boolean; messageId?: string; simulated?: boolean; reason?: string }> => {
   const htmlContent = buildApprovalEmailHtml(payload);
   const logoPath = getLogoFilePath();
 
@@ -471,17 +584,12 @@ export const sendApprovalEmail = async (
       ]
     : [];
 
-  if (smtpHost && smtpUser && smtpPass) {
-    try {
-      const transporter = nodemailer.createTransport({
-        host: smtpHost,
-        port: smtpPort,
-        secure: smtpPort === 465,
-        auth: { user: smtpUser, pass: smtpPass },
-      });
+  const mailer = getTransporter();
 
-      const info = await transporter.sendMail({
-        from: `"CargoPulse Platform" <${fromEmail}>`,
+  if (mailer) {
+    try {
+      const info = await mailer.transporter.sendMail({
+        from: `"CargoPulse Platform" <${mailer.fromEmail}>`,
         to: payload.to,
         subject: `CargoPulse Access Authorized — Welcome to ${payload.portalTitle}`,
         text: `Hello ${payload.name}, your account registration for CargoPulse (${payload.portalTitle}) has been approved. You can sign in at ${payload.loginUrl}`,
@@ -491,8 +599,9 @@ export const sendApprovalEmail = async (
 
       console.log(`[EmailService] Sent approval email with logo to ${payload.to}, messageId: ${info.messageId}`);
       return { success: true, messageId: info.messageId };
-    } catch (err) {
-      console.error('[EmailService] SMTP send error (falling back to audit log):', err);
+    } catch (err: any) {
+      console.error('[EmailService] SMTP send error:', err.message);
+      return { success: false, reason: `SMTP Error: ${err.message}` };
     }
   }
 
@@ -504,9 +613,10 @@ export const sendApprovalEmail = async (
   console.log(`PORTAL: ${payload.portalTitle}`);
   console.log(`LOGIN LINK: ${payload.loginUrl}`);
   console.log(`LOGO EMBEDDED: ${logoPath ? 'YES (CID: cargopulselogo)' : 'NO'}`);
+  console.log('NOTE: Real email not sent because SMTP_USER and SMTP_PASS are not configured on Render.');
   console.log('================================================================');
 
-  return { success: true, simulated: true };
+  return { success: true, simulated: true, reason: 'SMTP_USER and SMTP_PASS are not configured in Render environment.' };
 };
 
 /**
@@ -514,13 +624,7 @@ export const sendApprovalEmail = async (
  */
 export const sendDirectiveEmail = async (
   payload: DirectiveEmailPayload
-): Promise<{ success: boolean; messageId?: string; simulated?: boolean }> => {
-  const smtpHost = process.env.SMTP_HOST;
-  const smtpPort = parseInt(process.env.SMTP_PORT || '587', 10);
-  const smtpUser = process.env.SMTP_USER;
-  const smtpPass = process.env.SMTP_PASS;
-  const fromEmail = process.env.FROM_EMAIL || 'admin@cargopulse.io';
-
+): Promise<{ success: boolean; messageId?: string; simulated?: boolean; reason?: string }> => {
   const htmlContent = buildDirectiveEmailHtml(payload);
   const logoPath = getLogoFilePath();
 
@@ -534,17 +638,12 @@ export const sendDirectiveEmail = async (
       ]
     : [];
 
-  if (smtpHost && smtpUser && smtpPass) {
-    try {
-      const transporter = nodemailer.createTransport({
-        host: smtpHost,
-        port: smtpPort,
-        secure: smtpPort === 465,
-        auth: { user: smtpUser, pass: smtpPass },
-      });
+  const mailer = getTransporter();
 
-      const info = await transporter.sendMail({
-        from: `"CargoPulse Central Admin" <${fromEmail}>`,
+  if (mailer) {
+    try {
+      const info = await mailer.transporter.sendMail({
+        from: `"CargoPulse Central Admin" <${mailer.fromEmail}>`,
         to: payload.to,
         subject: `[CargoPulse Directive] ${payload.subject}`,
         text: `Attention ${payload.name} (${payload.role}): ${payload.message}`,
@@ -554,8 +653,9 @@ export const sendDirectiveEmail = async (
 
       console.log(`[EmailService] Dispatched directive email to ${payload.to}, messageId: ${info.messageId}`);
       return { success: true, messageId: info.messageId };
-    } catch (err) {
-      console.error('[EmailService] SMTP error sending directive:', err);
+    } catch (err: any) {
+      console.error('[EmailService] SMTP error sending directive:', err.message);
+      return { success: false, reason: `SMTP Error: ${err.message}` };
     }
   }
 
@@ -566,9 +666,66 @@ export const sendDirectiveEmail = async (
   console.log(`ROLE: ${payload.role}`);
   console.log(`PRIORITY: ${payload.priority || 'NORMAL'}`);
   console.log(`SUBJECT: ${payload.subject}`);
-  console.log(`MESSAGE:
-${payload.message}`);
+  console.log(`MESSAGE:\n${payload.message}`);
   console.log('================================================================');
 
-  return { success: true, simulated: true };
+  return { success: true, simulated: true, reason: 'SMTP_USER and SMTP_PASS are not configured in Render environment.' };
 };
+
+/**
+ * Sends password reset email with 6-digit OTP code and branding.
+ */
+export interface PasswordResetEmailPayload {
+  to: string;
+  name: string;
+  code: string;
+  resetUrl?: string;
+}
+
+export const sendPasswordResetEmail = async (
+  payload: PasswordResetEmailPayload
+): Promise<{ success: boolean; messageId?: string; simulated?: boolean; reason?: string }> => {
+  const htmlContent = buildPasswordResetEmailHtml(payload);
+  const logoPath = getLogoFilePath();
+
+  const attachments = logoPath
+    ? [
+        {
+          filename: 'cargopulse-logo.png',
+          path: logoPath,
+          cid: 'cargopulselogo',
+        },
+      ]
+    : [];
+
+  const mailer = getTransporter();
+
+  if (mailer) {
+    try {
+      const info = await mailer.transporter.sendMail({
+        from: `"CargoPulse Security" <${mailer.fromEmail}>`,
+        to: payload.to,
+        subject: `CargoPulse Password Reset Code: ${payload.code}`,
+        text: `Hello ${payload.name}, your CargoPulse password reset verification code is: ${payload.code}. It is valid for 15 minutes.`,
+        html: htmlContent,
+        attachments,
+      });
+
+      console.log(`[EmailService] Dispatched password reset email to ${payload.to}, messageId: ${info.messageId}`);
+      return { success: true, messageId: info.messageId };
+    } catch (err: any) {
+      console.error('[EmailService] SMTP password reset email error:', err.message);
+      return { success: false, reason: `SMTP Error: ${err.message}` };
+    }
+  }
+
+  console.log('================================================================');
+  console.log('[EMAIL SERVICE - PASSWORD RESET CODE]');
+  console.log(`TO: ${payload.to} (${payload.name})`);
+  console.log(`CODE: ${payload.code}`);
+  console.log('NOTE: Real email not sent because SMTP_USER and SMTP_PASS are not configured on Render.');
+  console.log('================================================================');
+
+  return { success: true, simulated: true, reason: 'SMTP_USER and SMTP_PASS are not configured in Render environment.' };
+};
+

@@ -10,12 +10,18 @@ import {
   ShieldCheck,
   CheckCircle2,
   UserPlus,
+  KeyRound,
+  X,
+  Eye,
+  EyeOff,
+  Check,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { getPortalByKey } from '../../config/portals';
 import { getAccent } from '../../config/accentStyles';
 import { Button } from '../../components/ui/Button';
 import { Input, FormField } from '../../components/ui/Input';
+import { ApiClient } from '../../services/api';
 
 export const PortalLoginPage: React.FC = () => {
   const { portalKey = '' } = useParams();
@@ -27,6 +33,74 @@ export const PortalLoginPage: React.FC = () => {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Forgot Password State
+  const [showForgot, setShowForgot] = useState(false);
+  const [forgotStep, setForgotStep] = useState<'REQUEST' | 'VERIFY'>('REQUEST');
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [resetCode, setResetCode] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [forgotLoading, setForgotLoading] = useState(false);
+  const [forgotError, setForgotError] = useState<string | null>(null);
+  const [forgotSuccess, setForgotSuccess] = useState<string | null>(null);
+  const [simulatedCodeHelper, setSimulatedCodeHelper] = useState<string | null>(null);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+
+  const handleRequestCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setForgotError(null);
+    setForgotSuccess(null);
+    setSimulatedCodeHelper(null);
+    setForgotLoading(true);
+    try {
+      const res = await ApiClient.post('/auth/forgot-password', { email: forgotEmail });
+      setForgotSuccess(res.message);
+      if (res.code) {
+        setSimulatedCodeHelper(res.code);
+        setResetCode(res.code);
+      }
+      setForgotStep('VERIFY');
+    } catch (err: any) {
+      setForgotError(err.message || 'Failed to request reset code.');
+    } finally {
+      setForgotLoading(false);
+    }
+  };
+
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setForgotError(null);
+    if (newPassword.length < 8) {
+      setForgotError('New password must be at least 8 characters long.');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setForgotError('Passwords do not match. Please verify and re-enter.');
+      return;
+    }
+
+    setForgotLoading(true);
+    try {
+      const res = await ApiClient.post('/auth/reset-password', {
+        email: forgotEmail,
+        code: resetCode,
+        newPassword,
+      });
+      setForgotSuccess(res.message);
+      setEmail(forgotEmail);
+      setPassword(newPassword);
+      setTimeout(() => {
+        setShowForgot(false);
+        setForgotStep('REQUEST');
+        setForgotSuccess(null);
+      }, 2000);
+    } catch (err: any) {
+      setForgotError(err.message || 'Failed to reset password.');
+    } finally {
+      setForgotLoading(false);
+    }
+  };
 
   if (!portal) return <Navigate to="/" replace />;
   if (user && (user.role === portal.role || user.role === 'ADMIN')) return <Navigate to={portal.dashboardPath} replace />;
@@ -227,7 +301,24 @@ export const PortalLoginPage: React.FC = () => {
               </div>
             </FormField>
 
-            <FormField label="Password" htmlFor="password">
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label htmlFor="password" className="text-xs font-semibold text-slate-700">Password</label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setForgotEmail(email || '');
+                    setForgotError(null);
+                    setForgotSuccess(null);
+                    setSimulatedCodeHelper(null);
+                    setForgotStep('REQUEST');
+                    setShowForgot(true);
+                  }}
+                  className="text-[11px] font-bold text-orange-600 hover:text-orange-700 hover:underline transition cursor-pointer"
+                >
+                  Forgot password?
+                </button>
+              </div>
               <div className="relative">
                 <Lock className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                 <Input
@@ -240,7 +331,7 @@ export const PortalLoginPage: React.FC = () => {
                   className="pl-10 text-xs"
                 />
               </div>
-            </FormField>
+            </div>
 
             {error && (
               <div className="flex items-start gap-2.5 rounded-xl border border-rose-200 bg-rose-50 p-3.5 text-xs text-rose-800">
@@ -280,6 +371,167 @@ export const PortalLoginPage: React.FC = () => {
               Sign In to {portal.shortLabel}
             </Button>
           </form>
+
+          {/* ================= FORGOT PASSWORD MODAL ================= */}
+          {showForgot && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in duration-200">
+              <div className="relative w-full max-w-md rounded-3xl border border-slate-200 bg-white p-6 sm:p-8 shadow-2xl">
+                {/* Close Button */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowForgot(false);
+                    setForgotError(null);
+                    setForgotSuccess(null);
+                  }}
+                  className="absolute right-5 top-5 rounded-full p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+
+                <div className="flex items-center gap-3 mb-5">
+                  <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-orange-50 border border-orange-200 text-orange-600">
+                    <KeyRound className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-serif text-lg font-bold text-slate-950">Reset Password</h3>
+                    <p className="text-xs text-slate-500">
+                      {forgotStep === 'REQUEST' ? 'Receive a 6-digit verification code' : 'Verify code & choose a new password'}
+                    </p>
+                  </div>
+                </div>
+
+                {forgotSuccess && (
+                  <div className="mb-4 flex items-start gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-800">
+                    <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600 mt-0.5" />
+                    <span>{forgotSuccess}</span>
+                  </div>
+                )}
+
+                {simulatedCodeHelper && (
+                  <div className="mb-4 rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
+                    <span className="font-bold block">Developer / Direct Verification Notice:</span>
+                    <span className="text-[11px]">SMTP is not configured on Render, so your OTP code is: <code className="bg-amber-200 font-mono font-bold px-1.5 py-0.5 rounded text-amber-950">{simulatedCodeHelper}</code> (auto-filled).</span>
+                  </div>
+                )}
+
+                {forgotError && (
+                  <div className="mb-4 flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800">
+                    <AlertTriangle className="h-4 w-4 shrink-0 text-rose-500 mt-0.5" />
+                    <span>{forgotError}</span>
+                  </div>
+                )}
+
+                {forgotStep === 'REQUEST' ? (
+                  <form onSubmit={handleRequestCode} className="space-y-4">
+                    <FormField label="Registered Corporate Email" htmlFor="forgot-email">
+                      <div className="relative">
+                        <Mail className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                        <Input
+                          id="forgot-email"
+                          type="email"
+                          required
+                          autoFocus
+                          value={forgotEmail}
+                          onChange={e => setForgotEmail(e.target.value)}
+                          placeholder="operator@cargopulse.io"
+                          className="pl-10 text-xs"
+                        />
+                      </div>
+                    </FormField>
+
+                    <Button
+                      type="submit"
+                      variant="primary"
+                      className="w-full justify-center bg-orange-500 hover:bg-orange-600 font-bold text-xs py-2.5"
+                      isLoading={forgotLoading}
+                      rightIcon={<ArrowRight className="h-4 w-4" />}
+                    >
+                      Send Verification Code
+                    </Button>
+                  </form>
+                ) : (
+                  <form onSubmit={handleResetPassword} className="space-y-4">
+                    <FormField label="6-Digit Verification Code" htmlFor="reset-code">
+                      <div className="relative">
+                        <KeyRound className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                        <Input
+                          id="reset-code"
+                          type="text"
+                          required
+                          autoFocus
+                          maxLength={6}
+                          value={resetCode}
+                          onChange={e => setResetCode(e.target.value.replace(/\D/g, ''))}
+                          placeholder="123456"
+                          className="pl-10 text-xs font-mono tracking-widest text-center text-sm font-bold"
+                        />
+                      </div>
+                    </FormField>
+
+                    <FormField label="New Password (min 8 characters)" htmlFor="new-password">
+                      <div className="relative">
+                        <Lock className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                        <Input
+                          id="new-password"
+                          type={showNewPassword ? 'text' : 'password'}
+                          required
+                          value={newPassword}
+                          onChange={e => setNewPassword(e.target.value)}
+                          placeholder="••••••••••••"
+                          className="pl-10 pr-10 text-xs"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowNewPassword(!showNewPassword)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                        >
+                          {showNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </button>
+                      </div>
+                    </FormField>
+
+                    <FormField label="Confirm New Password" htmlFor="confirm-password">
+                      <div className="relative">
+                        <Lock className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                        <Input
+                          id="confirm-password"
+                          type={showNewPassword ? 'text' : 'password'}
+                          required
+                          value={confirmPassword}
+                          onChange={e => setConfirmPassword(e.target.value)}
+                          placeholder="••••••••••••"
+                          className="pl-10 text-xs"
+                        />
+                      </div>
+                    </FormField>
+
+                    <div className="flex items-center gap-2 pt-2">
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => setForgotStep('REQUEST')}
+                        className="text-xs"
+                      >
+                        Back
+                      </Button>
+                      <Button
+                        type="submit"
+                        variant="primary"
+                        size="sm"
+                        className="flex-1 justify-center bg-orange-500 hover:bg-orange-600 font-bold text-xs py-2.5"
+                        isLoading={forgotLoading}
+                        rightIcon={<Check className="h-4 w-4" />}
+                      >
+                        Update Password
+                      </Button>
+                    </div>
+                  </form>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Footer Security Badge */}
           <div className="mt-8 pt-5 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
